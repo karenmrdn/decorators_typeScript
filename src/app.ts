@@ -8,16 +8,26 @@ function Logger(logString: string) {
   };
 }
 
+// !!! Only some decorator can return something from-inside themselves,
+// e.g. class, method and accessor decorators
 function WithTemplate(template: string, hookId: string) {
   console.log("TEMPLATE decorator factory");
-  return function (constructor: any) {
-    console.log("Rendering template");
-    const hookElement = document.getElementById(hookId);
-    const person = new constructor();
-    if (hookElement) {
-      hookElement.innerHTML = template;
-      hookElement.querySelector("h1")!.textContent = person.name;
-    }
+  return function <T extends { new (...args: any[]): { name: string } }>(
+    originalConstructor: T
+  ) {
+    // by returning new class from-inside decorator (not decorator factory)
+    // we will replace class that was originally created
+    return class extends originalConstructor {
+      constructor(..._: any[]) {
+        super();
+        console.log("Rendering template");
+        const hookElement = document.getElementById(hookId);
+        if (hookElement) {
+          hookElement.innerHTML = template;
+          hookElement.querySelector("h1")!.textContent = this.name;
+        }
+      }
+    };
   };
 }
 
@@ -34,11 +44,12 @@ class Person {
 }
 
 const person = new Person();
-
 console.log(person);
 
 /* ____________________________ */
 console.log("____________________________");
+
+// !!! All these decorators execute when our class defined
 
 // !!! Property decorator
 function Log(target: any, propertyName: string | Symbol) {
@@ -48,6 +59,7 @@ function Log(target: any, propertyName: string | Symbol) {
 
 // !!! Accessor decorator
 // target - prototype(if it is an instance method) or constructor-function(if it is static method)
+// We can return only new propertyDescriptor from-inside accessor and parameter decorators
 function Log2(
   target: any,
   name: string | Symbol,
@@ -75,6 +87,7 @@ function Log3(
 // !!! Parameter decorator
 // name - name of the method where we use this parameter
 // position - index of the argument in method arguments
+// !!! We can return only new propertyDescriptor from-inside accessor and parameter decorators
 function Log4(target: any, name: string | Symbol, position: number) {
   console.log("-----------Parameter decorator!");
   console.log(target);
@@ -83,7 +96,7 @@ function Log4(target: any, name: string | Symbol, position: number) {
 }
 
 class Product {
-  @Log // this decorator executes when our class definition is registered by JS
+  @Log
   title: string;
   private _price: number;
 
@@ -106,3 +119,41 @@ class Product {
     return this._price * (1 + tax);
   }
 }
+
+// Class instances creation does not affect decorators call
+const prod1 = new Product("Book", 29);
+const prod2 = new Product("Earbuds", 59);
+
+/* Autobind decorator */
+console.log("____________________________");
+
+function Autobind(
+  target: any,
+  methodName: string,
+  descriptor: PropertyDescriptor
+) {
+  const originalMethod = descriptor.value;
+  const adjDescriptor: PropertyDescriptor = {
+    configurable: true,
+    enumerable: false,
+    get() {
+      const boundFn = originalMethod.bind(this);
+      return boundFn;
+    },
+  };
+  return adjDescriptor;
+}
+
+class Printer {
+  message = "This works!";
+
+  @Autobind
+  showMessage() {
+    console.log(this.message);
+  }
+}
+
+const printer = new Printer();
+
+const button = document.querySelector("button")!;
+button.addEventListener("click", printer.showMessage);
